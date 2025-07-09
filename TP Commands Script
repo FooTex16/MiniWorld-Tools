@@ -1,0 +1,189 @@
+-- ============================================
+-- 🌐 MINI WORLD MASTER SYSTEM (FINAL FUSION)
+-- ============================================
+
+-- ✅ Whitelist (izin tetap)
+local PERMISSION_WHITELIST = {
+    ["DINA"] = true,
+    ["Owner123"] = true
+}
+
+local commandPrefix = "/"
+local commandList = {}
+local givePermission = {}
+
+-- 🔍 Ambil UID dari nama pemain
+local function nametouid(name)
+    local _, _, list = World:getAllPlayers(-1)
+    for _, pid in ipairs(list) do
+        local _, nick = Player:getNickname(pid)
+        if nick == name then return pid end
+    end
+    return nil
+end
+
+-- 🏆 Cek host (fallback: PID terkecil)
+local function isHost(pid)
+    if Player.isHost then
+        return Player:isHost(pid) == true
+    end
+    local _, _, list = World:getAllPlayers(-1)
+    local minPid = nil
+    for _, p in ipairs(list) do
+        if not minPid or p < minPid then minPid = p end
+    end
+    return pid == minPid
+end
+
+-- ✅ Cek izin akses perintah
+local function hasGivePermission(pid)
+    local _, name = Player:getNickname(pid)
+    return isHost(pid) or givePermission[pid] or PERMISSION_WHITELIST[name] == true
+end
+
+-- 🔧 Daftar command sistem izin
+local function registerCommand(name, func)
+    commandList[name] = func
+end
+
+registerCommand("grantgive", function(pid, target)
+    if not isHost(pid) then
+        Chat:sendSystemMsg("⛔ Hanya host yang bisa memberikan izin.", pid)
+        return
+    end
+    local tp = tonumber(target) or nametouid(target)
+    if not tp then
+        Chat:sendSystemMsg("❌ Target tidak ditemukan!", pid)
+        return
+    end
+    givePermission[tp] = true
+    Chat:sendSystemMsg("✅ Izin diberikan ke pemain.", pid)
+    Chat:sendSystemMsg("📜 Kamu sekarang punya izin.", tp)
+end)
+
+registerCommand("revoke", function(pid, target)
+    if not isHost(pid) then
+        Chat:sendSystemMsg("⛔ Hanya host yang bisa mencabut izin.", pid)
+        return
+    end
+    local tp = tonumber(target) or nametouid(target)
+    if not tp then
+        Chat:sendSystemMsg("❌ Target tidak ditemukan!", pid)
+        return
+    end
+    givePermission[tp] = nil
+    Chat:sendSystemMsg("⛔ Izin dicabut.", pid)
+    Chat:sendSystemMsg("❌ Kamu tidak lagi punya izin.", tp)
+end)
+
+registerCommand("listperm", function(pid)
+    Chat:sendSystemMsg("🧾 Pemain dengan izin:", pid)
+    for uid, _ in pairs(givePermission) do
+        local _, name = Player:getNickname(uid)
+        Chat:sendSystemMsg("✅ " .. name .. " (" .. uid .. ")", pid)
+    end
+    for name, _ in pairs(PERMISSION_WHITELIST) do
+        Chat:sendSystemMsg("🔒 Whitelist: " .. name, pid)
+    end
+end)
+
+registerCommand("amihost", function(pid)
+    if isHost(pid) then
+        Chat:sendSystemMsg("✅ Kamu adalah host!", pid)
+    else
+        Chat:sendSystemMsg("❌ Kamu BUKAN host.", pid)
+    end
+end)
+
+-- ==============================
+-- 📍 TELEPORT SYSTEM (with izin)
+-- ==============================
+
+local TP_EFFECT = 1001
+local TP_SOUND = 10963
+local saved_locations = {}
+
+function teleportToXYZ(pid, x, y, z)
+    Actor:setPosition(pid, x, y, z)
+    World:playParticalEffect(x, y, z, TP_EFFECT, 1)
+    Player:playMusic(pid, TP_SOUND, 100, 1, false)
+    Chat:sendSystemMsg("#G✨ Teleported ke X:" .. x .. " Y:" .. y .. " Z:" .. z, pid)
+end
+
+function saveLocation(pid, name)
+    local ok, x, y, z = Actor:getPosition(pid)
+    if ok ~= ErrorCode.OK then
+        Chat:sendSystemMsg("#R✖ Gagal mendapatkan posisi!", pid)
+        return
+    end
+    saved_locations[pid] = saved_locations[pid] or {}
+    saved_locations[pid][name] = {x = x, y = y, z = z}
+    Chat:sendSystemMsg("#G💾 Lokasi '" .. name .. "' disimpan: X=" .. x .. " Y=" .. y .. " Z=" .. z, pid)
+end
+
+function gotoSavedLocation(pid, name)
+    local pos = saved_locations[pid] and saved_locations[pid][name]
+    if not pos then
+        Chat:sendSystemMsg("#R✖ Lokasi tidak ditemukan!", pid)
+        return
+    end
+    teleportToXYZ(pid, pos.x, pos.y, pos.z)
+end
+
+function listSavedLocations(pid)
+    Chat:sendSystemMsg("#W=== Lokasi Tersimpan ===", pid)
+    if not saved_locations[pid] then
+        Chat:sendSystemMsg("  (kosong)", pid)
+        return
+    end
+    for name, pos in pairs(saved_locations[pid]) do
+        Chat:sendSystemMsg("• " .. name .. " → X:" .. pos.x .. " Y:" .. pos.y .. " Z:" .. pos.z, pid)
+    end
+end
+
+function showTpHelp(pid)
+    Chat:sendSystemMsg("#W=== 📌 TP Commands ===", pid)
+    Chat:sendSystemMsg("#Y/tp X Y Z          - Teleport ke koordinat", pid)
+    Chat:sendSystemMsg("#Y/tpsv [nama]       - Simpan lokasi saat ini", pid)
+    Chat:sendSystemMsg("#Y/gototpsv [nama]   - Pergi ke lokasi tersimpan", pid)
+    Chat:sendSystemMsg("#Y/listtpsv          - Lihat lokasi tersimpan", pid)
+    Chat:sendSystemMsg("#Y/tphelp            - Tampilkan bantuan", pid)
+end
+
+-- ==============================
+-- 🔁 CHAT COMMAND PARSER
+-- ==============================
+
+function onChatInput(event)
+    local pid = event.eventobjid
+    local msg = event.content
+
+    -- Jalankan command izin jika cocok
+    for name, func in pairs(commandList) do
+        if msg:match("^/" .. name) then
+            local _, _, arg = msg:find("^/" .. name .. "%s*(.*)")
+            func(pid, arg)
+            return
+        end
+    end
+
+    -- Perintah TP (izin diperlukan)
+    if hasGivePermission(pid) then
+        local x, y, z = msg:match("^/tp%s+([-%d%.]+)%s+([-%d%.]+)%s+([-%d%.]+)$")
+        if x and y and z then
+            teleportToXYZ(pid, tonumber(x), tonumber(y), tonumber(z))
+            return
+        end
+
+        local saveName = msg:match("^/tpsv%s+([%w_%-]+)$")
+        if saveName then saveLocation(pid, saveName) return end
+
+        local gotoName = msg:match("^/gototpsv%s+([%w_%-]+)$")
+        if gotoName then gotoSavedLocation(pid, gotoName) return end
+
+        if msg == "/listtpsv" then listSavedLocations(pid) return end
+        if msg == "/tphelp" then showTpHelp(pid) return end
+    end
+end
+
+ScriptSupportEvent:registerEvent("Player.NewInputContent", onChatInput)
