@@ -1,0 +1,294 @@
+-- =============================================
+-- 🎮 MINI WORLD ATTRIBUTE + PERMISSION SYSTEM
+-- =============================================
+
+-- ✅ Daftar nama pemain yang selalu punya izin (whitelist tetap)
+local PERMISSION_WHITELIST = {
+    ["DINA"] = true,
+    ["Owner123"] = true
+}
+
+-- Maksimal jumlah item per pemberian (jika ingin digunakan)
+local MAX_GIVE = 99
+
+-- Data izin
+local commandPrefix = "/"
+local commandList = {}
+local givePermission = {}
+
+-- 🔍 Ambil UID dari nama pemain
+local function nametouid(name)
+    local _, _, list = World:getAllPlayers(-1)
+    for _, pid in ipairs(list) do
+        local _, nick = Player:getNickname(pid)
+        if nick == name then
+            return pid
+        end
+    end
+    return nil
+end
+
+-- 🏆 Deteksi Host Game (fallback: PID terkecil)
+local function isHost(pid)
+    if Player.isHost then
+        return Player:isHost(pid) == true
+    end
+    local _, _, list = World:getAllPlayers(-1)
+    local minPid = nil
+    for _, p in ipairs(list) do
+        if not minPid or p < minPid then minPid = p end
+    end
+    return pid == minPid
+end
+
+-- ✅ Cek apakah player punya izin
+local function hasGivePermission(pid)
+    local _, name = Player:getNickname(pid)
+    return isHost(pid) or givePermission[pid] or PERMISSION_WHITELIST[name] == true
+end
+
+-- 🔧 Daftar command manual
+local function registerCommand(name, func)
+    commandList[name] = func
+end
+
+-- =========================
+-- 🛡️ IZIN / PERMISSION SYSTEM
+-- =========================
+
+registerCommand("grantgive", function(pid, target)
+    if not isHost(pid) then
+        Chat:sendSystemMsg("⛔ Hanya host yang bisa memberikan izin.", pid)
+        return
+    end
+    local tp = tonumber(target) or nametouid(target)
+    if not tp then
+        Chat:sendSystemMsg("❌ Target tidak ditemukan!", pid)
+        return
+    end
+    givePermission[tp] = true
+    Chat:sendSystemMsg("✅ Izin /give diberikan ke pemain.", pid)
+    Chat:sendSystemMsg("📜 Kamu sekarang memiliki izin /give.", tp)
+end)
+
+registerCommand("revoke", function(pid, target)
+    if not isHost(pid) then
+        Chat:sendSystemMsg("⛔ Hanya host yang bisa mencabut izin.", pid)
+        return
+    end
+    local tp = tonumber(target) or nametouid(target)
+    if not tp then
+        Chat:sendSystemMsg("❌ Target tidak ditemukan!", pid)
+        return
+    end
+    givePermission[tp] = nil
+    Chat:sendSystemMsg("⛔ Izin /give dicabut.", pid)
+    Chat:sendSystemMsg("❌ Kamu tidak lagi memiliki izin /give.", tp)
+end)
+
+registerCommand("listperm", function(pid)
+    Chat:sendSystemMsg("🧾 Pemain dengan izin /give:", pid)
+    for uid, _ in pairs(givePermission) do
+        local _, name = Player:getNickname(uid)
+        Chat:sendSystemMsg("✅ " .. name .. " (" .. uid .. ")", pid)
+    end
+    for name, _ in pairs(PERMISSION_WHITELIST) do
+        Chat:sendSystemMsg("🔒 Whitelist: " .. name, pid)
+    end
+end)
+
+registerCommand("amihost", function(pid)
+    if isHost(pid) then
+        Chat:sendSystemMsg("✅ Kamu adalah host!", pid)
+    else
+        Chat:sendSystemMsg("❌ Kamu BUKAN host.", pid)
+    end
+end)
+
+-- =========================
+-- 🧬 ATTR COMMAND SYSTEM
+-- =========================
+
+local savedAttr = {}
+local attrMap = {
+    sethp             = PLAYERATTR.CUR_HP,
+    setmaxhp          = PLAYERATTR.MAX_HP,
+    sethprec          = PLAYERATTR.HP_RECOVERY,
+    sethunger         = PLAYERATTR.CUR_HUNGER,
+    setoxygen         = PLAYERATTR.CUR_OXYGEN,
+    setsta            = PLAYERATTR.CUR_STRENGTH,
+    setmaxsta         = PLAYERATTR.MAX_STRENGTH,
+    setsrec           = PLAYERATTR.STRENGTH_RECOVERY,
+    setatk            = PLAYERATTR.ATK_MELEE,
+    setrangedatk      = PLAYERATTR.ATK_REMOTE,
+    setdef            = PLAYERATTR.DEF_MELEE,
+    setrangeddef      = PLAYERATTR.DEF_REMOTE,
+    setmodelsize      = PLAYERATTR.MODEL_SCALE,
+    setstar           = PLAYERATTR.STAR,
+    setcurlevelexp    = PLAYERATTR.CUR_LEVELEXP,
+    setlevel          = PLAYERATTR.LEVEL,
+    setspeed          = PLAYERATTR.MOVE_SPEED,
+    setrunspeed       = PLAYERATTR.RUN_SPEED,
+    setstealthspeed   = PLAYERATTR.STEALTH_SPEED,
+    setswimspeed      = PLAYERATTR.SWIM_SPEED,
+    setjump           = PLAYERATTR.JUMP_HEIGHT
+}
+
+-- Simpan profil
+function saveAttributesProfile(pid, name)
+    name = name or "default"
+    savedAttr[pid] = savedAttr[pid] or {}
+    savedAttr[pid][name] = {}
+    for _, attr in pairs(attrMap) do
+        savedAttr[pid][name][attr] = Player:getAttr(pid, attr)
+    end
+    Chat:sendSystemMsg("#G💾 Profile '" .. name .. "' saved!", pid)
+end
+
+-- Muat profil
+function loadAttributesProfile(pid, name)
+    name = name or "default"
+    if not (savedAttr[pid] and savedAttr[pid][name]) then
+        Chat:sendSystemMsg("#R✖ No saved profile: '" .. name .. "'", pid)
+        return
+    end
+    for attr, value in pairs(savedAttr[pid][name]) do
+        Player:setAttr(pid, attr, value)
+    end
+    Chat:sendSystemMsg("#B🔄 Profile '" .. name .. "' loaded!", pid)
+end
+
+-- Daftar profil
+function listProfiles(pid)
+    Chat:sendSystemMsg("#W📦 Your saved profiles:", pid)
+    if not savedAttr[pid] then
+        Chat:sendSystemMsg("  - None", pid)
+        return
+    end
+    for name, _ in pairs(savedAttr[pid]) do
+        Chat:sendSystemMsg("  - " .. name, pid)
+    end
+end
+
+-- Reset semua
+function resetAttributes(pid)
+    for _, attr in pairs(attrMap) do
+        Player:setAttr(pid, attr, 0)
+    end
+    Chat:sendSystemMsg("#Y🔁 All attributes reset", pid)
+end
+
+function showAttrHelp(pid)
+    Chat:sendSystemMsg("#W📜 === Attribute Commands ===", pid)
+    for cmd, _ in pairs(attrMap) do
+        Chat:sendSystemMsg("/" .. cmd .. " [value]", pid)
+    end
+    Chat:sendSystemMsg("/attrsave [name]    → Save profile", pid)
+    Chat:sendSystemMsg("/attrload [name]    → Load profile", pid)
+    Chat:sendSystemMsg("/attrprofile        → List saved profiles", pid)
+    Chat:sendSystemMsg("/attrreset          → Reset all attributes", pid)
+    Chat:sendSystemMsg("/attackontitan      → Titan Mode", pid)
+    Chat:sendSystemMsg("/attackoff          → Restore last profile", pid)
+    Chat:sendSystemMsg("/ultramangodmode    → God Mode", pid)
+end
+
+function enableTitanMode(pid)
+    saveAttributesProfile(pid, "__prev_titan__")
+    Player:setAttr(pid, PLAYERATTR.MAX_HP, 99999)
+    Player:setAttr(pid, PLAYERATTR.CUR_HP, 99999)
+    Player:setAttr(pid, PLAYERATTR.HP_RECOVERY, 500)
+    Player:setAttr(pid, PLAYERATTR.ATK_MELEE, 500)
+    Player:setAttr(pid, PLAYERATTR.ATK_REMOTE, 300)
+    Player:setAttr(pid, PLAYERATTR.DEF_MELEE, 400)
+    Player:setAttr(pid, PLAYERATTR.DEF_REMOTE, 300)
+    Player:setAttr(pid, PLAYERATTR.MODEL_SCALE, 3.5)
+    Player:setAttr(pid, PLAYERATTR.CUR_STRENGTH, 999)
+    Player:setAttr(pid, PLAYERATTR.MAX_STRENGTH, 999)
+    Player:setAttr(pid, PLAYERATTR.STRENGTH_RECOVERY, 200)
+    Player:setAttr(pid, PLAYERATTR.STAR, 10)
+    Player:setAttr(pid, PLAYERATTR.LEVEL, 999)
+    Player:setAttr(pid, PLAYERATTR.CUR_LEVELEXP, 50000)
+    Player:setAttr(pid, PLAYERATTR.CUR_HUNGER, 0)
+    Player:setAttr(pid, PLAYERATTR.CUR_OXYGEN, 99999)
+    Player:setAttr(pid, PLAYERATTR.MOVE_SPEED, 1.5)
+    Player:setAttr(pid, PLAYERATTR.JUMP_HEIGHT, 2.0)
+    Chat:sendSystemMsg("#G🗡️ Titan mode activated!", pid)
+end
+
+function enableUltraManGodMode(pid)
+    saveAttributesProfile(pid, "__prev_god__")
+    Player:setAttr(pid, PLAYERATTR.MAX_HP, 99999)
+    Player:setAttr(pid, PLAYERATTR.CUR_HP, 99999)
+    Player:setAttr(pid, PLAYERATTR.HP_RECOVERY, 999)
+    Player:setAttr(pid, PLAYERATTR.ATK_MELEE, 999)
+    Player:setAttr(pid, PLAYERATTR.ATK_REMOTE, 999)
+    Player:setAttr(pid, PLAYERATTR.DEF_MELEE, 999)
+    Player:setAttr(pid, PLAYERATTR.DEF_REMOTE, 999)
+    Player:setAttr(pid, PLAYERATTR.MODEL_SCALE, 2.0)
+    Player:setAttr(pid, PLAYERATTR.CUR_STRENGTH, 999)
+    Player:setAttr(pid, PLAYERATTR.MAX_STRENGTH, 999)
+    Player:setAttr(pid, PLAYERATTR.STRENGTH_RECOVERY, 999)
+    Player:setAttr(pid, PLAYERATTR.STAR, 99)
+    Player:setAttr(pid, PLAYERATTR.LEVEL, 999)
+    Player:setAttr(pid, PLAYERATTR.CUR_LEVELEXP, 999999)
+    Player:setAttr(pid, PLAYERATTR.CUR_HUNGER, 999999)
+    Player:setAttr(pid, PLAYERATTR.CUR_OXYGEN, 999)
+    Player:setAttr(pid, PLAYERATTR.MOVE_SPEED, 3.0)
+    Player:setAttr(pid, PLAYERATTR.JUMP_HEIGHT, 3.0)
+    Chat:sendSystemMsg("#Y⚡ Ultraman God Mode activated!", pid)
+end
+
+function disableOPMode(pid)
+    loadAttributesProfile(pid, "__prev_titan__")
+    loadAttributesProfile(pid, "__prev_god__")
+    Chat:sendSystemMsg("#W👤 Restored to original state", pid)
+end
+
+-- =========================
+-- 💬 CHAT PARSER
+-- =========================
+function onAttrChatInput(event)
+    local pid = event.eventobjid
+    local msg = event.content
+
+    if not hasGivePermission(pid) then return end
+
+    if msg:match("^/attrsave%s*(%w*)") then
+        local name = msg:match("^/attrsave%s*(%w*)")
+        saveAttributesProfile(pid, name ~= "" and name or "default")
+        return
+    elseif msg:match("^/attrload%s*(%w*)") then
+        local name = msg:match("^/attrload%s*(%w*)")
+        loadAttributesProfile(pid, name ~= "" and name or "default")
+        return
+    elseif msg == "/attrreset" then
+        resetAttributes(pid)
+        return
+    elseif msg == "/attrprofile" then
+        listProfiles(pid)
+        return
+    elseif msg == "/attrhelp" then
+        showAttrHelp(pid)
+        return
+    elseif msg == "/attackontitan" then
+        enableTitanMode(pid)
+        return
+    elseif msg == "/ultramangodmode" then
+        enableUltraManGodMode(pid)
+        return
+    elseif msg == "/attackoff" then
+        disableOPMode(pid)
+        return
+    end
+
+    -- Perintah set manual
+    local cmd, valStr = msg:match("^/(%w+)%s+(%d+)$")
+    local attr = attrMap[cmd]
+    local val = tonumber(valStr)
+    if attr and val then
+        Player:setAttr(pid, attr, val)
+        Chat:sendSystemMsg("#G✔ " .. cmd .. " set to " .. val, pid)
+    end
+end
+
+ScriptSupportEvent:registerEvent("Player.NewInputContent", onAttrChatInput)
