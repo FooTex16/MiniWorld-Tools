@@ -14,15 +14,15 @@ https://pastebin.com/igWLyeuy
 
 
 📘 COMMAND LIST — DAFTAR PERINTAH
-Perintah / Command	Bahasa Indonesia	English Description
-/grantgive [nama/id]	Beri izin /give ke pemain	Grant /give permission to a player
-/revoke [nama/id]	Cabut izin /give dari pemain	Revoke /give permission from a player
-/give [itemID] [jumlah] ([target])	Berikan item ke diri sendiri atau pemain lain	Give item to yourself or another player
-/giveall [itemID] [jumlah]	Berikan item ke semua pemain	Give item to all players
-/clearinv [barType 1–3]	Kosongkan bar inventori (1=Bar cepat, 2=Storage, 3=Armor)	Clear inventory bar (1=Shortcut, 2=Storage, 3=Armor)
-/amihost	Cek apakah kamu adalah host	Check if you are the host
-/listperm	Tampilkan daftar pemain yang memiliki izin /give	Show the list of players with /give permission
-/help	Tampilkan bantuan dan daftar perintah	Show help and command list
+
+/grantgive [nama/id]	                Beri izin /give ke pemain	
+/revoke [nama/id]                   	Cabut izin /give dari pemain
+/give [itemID] [jumlah] ([target])  	Berikan item ke diri sendiri atau pemain lain
+/giveall [itemID] [jumlah]	          Berikan item ke semua pemain
+/clearinv [barType 1–3]	             Kosongkan bar inventori (1=Bar cepat, 2=Storage, 3=Armor)
+/amihost	                            Cek apakah kamu adalah host
+/listperm	                           Tampilkan daftar pemain yang memiliki izin /give
+/help	                               Tampilkan bantuan dan daftar perintah
 
 ℹ️ Penjelasan Singkat / Quick Tips
 BarType 1–3:
