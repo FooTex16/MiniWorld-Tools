@@ -1,0 +1,232 @@
+-- =============================================
+-- 🎮 MINI WORLD GIVE ITEM SYSTEM (FINAL - CLEAN)
+-- =============================================
+
+-- ✅ Daftar nama pemain yang selalu punya izin (whitelist tetap)
+local PERMISSION_WHITELIST = {
+    ["DINA"] = true,
+    ["Owner123"] = true
+}
+
+-- Maksimal jumlah item per pemberian
+local MAX_GIVE = 99
+
+-- Prefix command (chat)
+local commandPrefix = "/"
+local commandList = {}
+local givePermission = {} -- izin per player
+
+-- 🔍 Ambil UID dari nama pemain
+local function nametouid(name)
+    local _, _, list = World:getAllPlayers(-1)
+    for _, pid in ipairs(list) do
+        local _, nick = Player:getNickname(pid)
+        if nick == name then
+            return pid
+        end
+    end
+    return nil
+end
+
+-- 🏆 Deteksi Host Game (fallback PID terkecil jika API tidak tersedia)
+local function isHost(pid)
+    if Player.isHost then
+        local ok = Player:isHost(pid)
+        if ok == true then return true end
+    end
+    -- fallback: pid terkecil = host
+    local _, _, list = World:getAllPlayers(-1)
+    local minPid = nil
+    for _, p in ipairs(list) do
+        if not minPid or p < minPid then minPid = p end
+    end
+    return pid == minPid
+end
+
+-- ✅ Cek apakah player punya izin menggunakan perintah
+local function hasGivePermission(pid)
+    local _, name = Player:getNickname(pid)
+    return isHost(pid) or givePermission[pid] or PERMISSION_WHITELIST[name] == true
+end
+
+-- 🔧 Daftar command
+local function registerCommand(name, func)
+    commandList[name] = func
+end
+
+-- ============================
+-- 📦 GIVE ITEM COMMAND SYSTEM
+-- ============================
+
+-- Berikan izin /give ke pemain
+registerCommand("grantgive", function(pid, target)
+    if not isHost(pid) then
+        Chat:sendSystemMsg("⛔ Hanya host yang bisa memberikan izin.", pid)
+        return
+    end
+    local tp = tonumber(target) or nametouid(target)
+    if not tp then
+        Chat:sendSystemMsg("❌ Target tidak ditemukan!", pid)
+        return
+    end
+    givePermission[tp] = true
+    Chat:sendSystemMsg("✅ Izin /give diberikan ke pemain.", pid)
+    Chat:sendSystemMsg("📜 Kamu sekarang memiliki izin /give.", tp)
+end)
+
+-- Cabut izin dari pemain
+registerCommand("revoke", function(pid, target)
+    if not isHost(pid) then
+        Chat:sendSystemMsg("⛔ Hanya host yang bisa mencabut izin.", pid)
+        return
+    end
+    local tp = tonumber(target) or nametouid(target)
+    if not tp then
+        Chat:sendSystemMsg("❌ Target tidak ditemukan!", pid)
+        return
+    end
+    givePermission[tp] = nil
+    Chat:sendSystemMsg("⛔ Izin /give dicabut.", pid)
+    Chat:sendSystemMsg("❌ Kamu tidak lagi memiliki izin /give.", tp)
+end)
+
+-- Beri item ke diri sendiri atau orang lain
+registerCommand("give", function(pid, itemid, qty, target)
+    if not hasGivePermission(pid) then
+        Chat:sendSystemMsg("🚫 Kamu tidak punya izin /give.", pid)
+        return
+    end
+    itemid = tonumber(itemid)
+    qty = math.min(tonumber(qty) or 1, MAX_GIVE)
+    if not itemid or qty < 1 then
+        Chat:sendSystemMsg("⚠ Format: /give [itemID] [jumlah] ([target])", pid)
+        return
+    end
+    local name = Item:getItemName(itemid)
+    if not name then
+        Chat:sendSystemMsg("❌ ID item tidak valid!", pid)
+        return
+    end
+    local tp = target and (tonumber(target) or nametouid(target)) or pid
+    if not tp then
+        Chat:sendSystemMsg("❌ Target tidak ditemukan!", pid)
+        return
+    end
+    local ok = Backpack:addItem(tp, itemid, qty)
+    if ok then
+        Chat:sendSystemMsg("🎁 Diberikan *" .. name .. "* x" .. qty, tp)
+        if tp ~= pid then
+            Chat:sendSystemMsg("📦 Kamu memberi *" .. name .. "* x" .. qty .. " ke pemain lain.", pid)
+        end
+    else
+        Chat:sendSystemMsg("✖ Gagal memberi item.", pid)
+    end
+end)
+
+-- Beri item ke semua pemain
+registerCommand("giveall", function(pid, itemid, qty)
+    if not hasGivePermission(pid) then
+        Chat:sendSystemMsg("🚫 Kamu tidak punya izin /giveall.", pid)
+        return
+    end
+    itemid = tonumber(itemid)
+    qty = math.min(tonumber(qty) or 1, MAX_GIVE)
+    if not itemid or qty < 1 then
+        Chat:sendSystemMsg("⚠ Format: /giveall [itemID] [jumlah]", pid)
+        return
+    end
+    local name = Item:getItemName(itemid)
+    if not name then
+        Chat:sendSystemMsg("❌ ID item tidak valid!", pid)
+        return
+    end
+    local _, _, list = World:getAllPlayers(-1)
+    for _, tpid in ipairs(list) do
+        Backpack:addItem(tpid, itemid, qty)
+        Chat:sendSystemMsg("🎁 Kamu menerima *" .. name .. "* x" .. qty, tpid)
+    end
+    Chat:sendSystemMsg("📢 *" .. name .. "* x" .. qty .. " diberikan ke semua pemain!", pid)
+end)
+
+-- Kosongkan backpack
+-- ======== /clearinv [barType 1–3] ========
+registerCommand("clearinv", function(pid, barType)
+    if not hasGivePermission(pid) then
+        Chat:sendSystemMsg("🚫 Kamu tidak punya izin /clearinv.", pid)
+        return
+    end
+
+    local bt = tonumber(barType)
+    if not bt or bt < 1 or bt > 3 then
+        Chat:sendSystemMsg("⚠ Format: /clearinv [barType 1–3]\n1=Shortcut bar, 2=Storage bar, 3=Armor bar", pid)
+        return
+    end
+
+    local err = Backpack:clearPack(pid, bt)
+    if err == ErrorCode.OK or err == 0 then
+        local nameBar = ({ "Shortcut bar", "Storage bar", "Armor bar" })[bt]
+        Chat:sendSystemMsg("🧹 " .. nameBar .. " kamu berhasil dikosongkan.", pid)
+    else
+        Chat:sendSystemMsg("⚠ Gagal mengosongkan bar! Kode error: " .. tostring(err), pid)
+    end
+end)
+
+
+-- Tampilkan siapa saja yang punya izin
+registerCommand("listperm", function(pid)
+    Chat:sendSystemMsg("🧾 Pemain dengan izin /give:", pid)
+    for uid, _ in pairs(givePermission) do
+        local _, name = Player:getNickname(uid)
+        Chat:sendSystemMsg("✅ " .. name .. " (" .. uid .. ")", pid)
+    end
+    for name, _ in pairs(PERMISSION_WHITELIST) do
+        Chat:sendSystemMsg("🔒 Whitelist: " .. name, pid)
+    end
+end)
+
+-- Cek apakah kamu host
+registerCommand("amihost", function(pid)
+    if isHost(pid) then
+        Chat:sendSystemMsg("✅ Kamu adalah host!", pid)
+    else
+        Chat:sendSystemMsg("❌ Kamu BUKAN host.", pid)
+    end
+end)
+
+-- Bantuan command
+registerCommand("givehelp", function(pid)
+    Chat:sendSystemMsg("📘 Daftar Perintah:", pid)
+    Chat:sendSystemMsg("/grantgive [nama/id]     → Beri izin /give", pid)
+    Chat:sendSystemMsg("/revoke [nama/id]        → Cabut izin /give", pid)
+    Chat:sendSystemMsg("/give [itemID] [qty]     → Beri item", pid)
+    Chat:sendSystemMsg("/giveall [itemID] [qty]  → Beri ke semua pemain", pid)
+    Chat:sendSystemMsg("/clearinv [target]       → Kosongkan backpack", pid)
+    Chat:sendSystemMsg("/amihost                 → Cek apakah kamu host", pid)
+    Chat:sendSystemMsg("/listperm                → Lihat daftar yang diizinkan", pid)
+    Chat:sendSystemMsg("/givehelp                    → Tampilkan bantuan", pid)
+end)
+
+-- ====================
+-- 📥 CHAT EVENT HOOK
+-- ====================
+local function onPlayerMessage(event)
+    local pid = event.eventobjid
+    local msg = event.content
+    if not msg:find("^" .. commandPrefix) then return end
+
+    local _, parts = Game:splitStr(msg:sub(2), " ")
+    local cmd = parts[1]:lower()
+    local args = {}
+    for i = 2, #parts do
+        args[#args + 1] = parts[i]
+    end
+
+    local fn = commandList[cmd]
+    if fn then
+        fn(pid, unpack(args))
+    else
+        Chat:sendSystemMsg("❓ Perintah tidak dikenali: /" .. cmd, pid)
+    end
+end
+
+ScriptSupportEvent:registerEvent([=[Player.NewInputContent]=], onPlayerMessage)
